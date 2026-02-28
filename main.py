@@ -176,7 +176,7 @@ class App:
                 # keep cam running for menu preview
             else:
                 self.running = False
-        if k == pygame.K_SPACE and self.state == "game" and self.game.over:
+        if k == pygame.K_SPACE and self.state == "game" and not self.game.active:
             self.game.start()
 
     def _click(self, mx, my):
@@ -441,39 +441,82 @@ class App:
         s.blit(self.fs.render("ESC to go back", True, GRAY), (20, H - 20))
 
     def _draw_scale(self):
+        """Draw 3 octaves of notes (octave 3, 4, 5) on the right panel."""
         s = self.screen
         sx = SIDE_W + 20
         sw = W - SIDE_W - 40
         sy, sh = 20, H - 40
         pygame.draw.rect(s, (20, 20, 35), (sx - 10, sy - 10, sw + 20, sh + 20), border_radius=10)
 
-        slot = sh / len(GAME_NOTES)
-        for i, nn in enumerate(GAME_NOTES):
-            y = sy + sh - (i + 1) * slot
-            c = NOTE_COLORS.get(nn, GRAY)
-            cur = self._note and self._note.replace("5", "") == nn
-            lr = pygame.Rect(sx, int(y) + 2, sw, int(slot) - 4)
-            if cur:
-                pygame.draw.rect(s, (*c, 80), lr, border_radius=5)
-                pygame.draw.rect(s, c, lr, 3, border_radius=5)
-            else:
-                pygame.draw.rect(s, (35, 35, 50), lr, border_radius=5)
-                pygame.draw.rect(s, (50, 50, 65), lr, 1, border_radius=5)
-            f = self.fm if cur else self.fs
-            tc = c if cur else LGRAY
-            t = f.render(nn, True, tc)
-            s.blit(t, (sx + 15, int(y + slot / 2 - t.get_height() / 2)))
+        # Build all 21 notes across 3 octaves
+        octaves = [
+            ("3", -12),  # octave below
+            ("4", 0),    # main octave
+            ("5", 12),   # octave above
+        ]
+        all_notes = []
+        for oct_label, semitone_shift in octaves:
+            for nn in GAME_NOTES:
+                base_freq = NOTE_FREQUENCIES.get(nn, 0)
+                freq = base_freq * (2 ** (semitone_shift / 12.0))
+                label = f"{nn}{oct_label}" if oct_label != "4" else nn
+                all_notes.append((label, nn, freq, oct_label))
 
-            freq = NOTE_FREQUENCIES.get(nn, 0)
-            # show adjusted frequency if offset != 0
-            offset = self.pitch.semitone_offset if self.pitch else 0
+        n_total = len(all_notes)
+        slot = sh / n_total
+        font_small = self.fs
+        offset = self.pitch.semitone_offset if self.pitch else 0
+
+        for i, (label, base_name, freq, oct_label) in enumerate(all_notes):
+            y = sy + sh - (i + 1) * slot
+            c = NOTE_COLORS.get(base_name, GRAY)
+            # Dim notes in octaves 3 and 5
+            if oct_label != "4":
+                c = tuple(max(0, v - 60) for v in c)
+
+            # Check if this is the currently detected note
+            cur = False
+            if self._note:
+                cur_base = self._note.replace("5", "").replace("3", "")
+                if cur_base == base_name:
+                    # match octave too
+                    if (oct_label == "4" and "5" not in self._note and "3" not in self._note):
+                        cur = True
+                    elif oct_label == "5" and "5" in self._note:
+                        cur = True
+                    elif oct_label == "3" and "3" in self._note:
+                        cur = True
+
+            lr = pygame.Rect(sx, int(y) + 1, sw, max(int(slot) - 2, 2))
+            if cur:
+                pygame.draw.rect(s, (*NOTE_COLORS.get(base_name, GRAY), 80), lr, border_radius=3)
+                pygame.draw.rect(s, NOTE_COLORS.get(base_name, GRAY), lr, 2, border_radius=3)
+            else:
+                bg = (35, 35, 50) if oct_label == "4" else (28, 28, 42)
+                pygame.draw.rect(s, bg, lr, border_radius=3)
+                pygame.draw.rect(s, (50, 50, 65), lr, 1, border_radius=3)
+
+            # Note label
+            f = self.fm if cur else font_small
+            tc = NOTE_COLORS.get(base_name, GRAY) if cur else c
+            t = f.render(label, True, tc)
+            text_y = int(y + slot / 2 - t.get_height() / 2)
+            s.blit(t, (sx + 10, text_y))
+
+            # Frequency
             if offset != 0:
                 adj = freq * (2 ** (offset / 12))
-                ftxt = f"{adj:.0f} Hz ({offset:+d})"
+                ftxt = f"{adj:.0f} Hz"
             else:
                 ftxt = f"{freq:.0f} Hz"
-            ft = self.fs.render(ftxt, True, GRAY)
-            s.blit(ft, (sx + sw - ft.get_width() - 15, int(y + slot / 2 - ft.get_height() / 2)))
+            ft = font_small.render(ftxt, True, GRAY)
+            s.blit(ft, (sx + sw - ft.get_width() - 10, text_y))
+
+        # Octave divider labels
+        for j, (oct_label, _) in enumerate(octaves):
+            div_y = sy + sh - (j + 1) * len(GAME_NOTES) * slot
+            oct_t = font_small.render(f"Oct {oct_label}", True, LGRAY)
+            s.blit(oct_t, (sx + sw // 2 - oct_t.get_width() // 2, int(div_y) - 2))
 
     # ---- game (FULLSCREEN webcam + overlay) ------------------
     def _draw_game(self):
