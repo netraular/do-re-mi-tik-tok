@@ -127,6 +127,18 @@ class App:
         self._cal_msg = ""
         self._cal_msg_timer = 0
 
+        # Scale range selector
+        self._range_options = [
+            ("Auto",       0),
+            ("Very Low",  -24),
+            ("Low",       -12),
+            ("Normal",      0),
+            ("High",       12),
+            ("Very High",  24),
+        ]
+        self._range_sel = 0          # index into _range_options
+        self._range_open = False     # dropdown open?
+
         # Start webcam immediately for menu preview
         self._start_cam()
 
@@ -212,6 +224,26 @@ class App:
             self._start_audio()
 
     def _click_play(self, mx, my):
+        # ── range dropdown ──
+        range_btn = pygame.Rect(20, CAM_H + 260, SIDE_W - 40, 30)
+        if self._range_open:
+            for i in range(len(self._range_options)):
+                r = pygame.Rect(20, CAM_H + 295 + i * 28, SIDE_W - 40, 26)
+                if r.collidepoint(mx, my):
+                    self._range_sel = i
+                    self._range_open = False
+                    label, offset = self._range_options[i]
+                    if label == "Auto":
+                        pass  # keep whatever calibration set
+                    elif self.pitch:
+                        self.pitch.semitone_offset = offset
+                    return
+            self._range_open = False
+            return
+        if range_btn.collidepoint(mx, my):
+            self._range_open = not self._range_open
+            return
+
         # game button
         btn = pygame.Rect(40, H - 70, SIDE_W - 80, 45)
         if btn.collidepoint(mx, my):
@@ -385,6 +417,26 @@ class App:
         vw = min(1.0, self._vol * 10) * (SIDE_W - 40)
         vc = GREEN if self._vol > 0.01 else GRAY
         pygame.draw.rect(s, vc, (20, vy + 22, int(vw), 12))
+
+        # ── Vocal range dropdown ──
+        ry = CAM_H + 260
+        s.blit(self.fs.render("Vocal Range:", True, LGRAY), (20, ry - 18))
+        range_btn = pygame.Rect(20, ry, SIDE_W - 40, 30)
+        pygame.draw.rect(s, DGRAY, range_btn, border_radius=4)
+        pygame.draw.rect(s, LGRAY, range_btn, 2, border_radius=4)
+        sel_label, sel_off = self._range_options[self._range_sel]
+        disp = f"{sel_label}" if sel_label == "Auto" else f"{sel_label} ({sel_off:+d} st)"
+        s.blit(self.fs.render(disp, True, WHITE), (28, ry + 6))
+        s.blit(self.fs.render("v", True, WHITE), (range_btn.right - 22, ry + 6))
+
+        if self._range_open:
+            for i, (lbl, off) in enumerate(self._range_options):
+                r = pygame.Rect(20, ry + 35 + i * 28, SIDE_W - 40, 26)
+                bg = (70, 70, 100) if i == self._range_sel else (50, 50, 70)
+                pygame.draw.rect(s, bg, r)
+                pygame.draw.rect(s, LGRAY, r, 1)
+                txt = f"{lbl}" if lbl == "Auto" else f"{lbl} ({off:+d} st)"
+                s.blit(self.fs.render(txt, True, WHITE), (28, ry + 38 + i * 28))
 
         # Scale offset display + Calibrate button
         sy = H - 185
